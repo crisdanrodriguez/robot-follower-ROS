@@ -1,55 +1,57 @@
 #!/usr/bin/env python3
 
-# import ROS stuff
-import rospy
-from std_msgs.msg import Int32
-from geometry_msgs.msg import Point
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge, CvBridgeError
-# import the necessary packages
-from collections import deque
-from imutils.video import VideoStream
-import numpy as np
+"""Track a colored object from a ROS image topic."""
+
 import argparse
+from collections import deque
+
 import cv2
 import imutils
-import time
+import numpy as np
 import rospy
+from cv_bridge import CvBridge, CvBridgeError
+from geometry_msgs.msg import Point
+from sensor_msgs.msg import Image
+from std_msgs.msg import Int32
 
 
-class BallTracker():
+class BallTracker:
     def __init__(self):
-        # Init the ros node
         rospy.init_node("ball_tracker")
-        self.pub_center = rospy.Publisher('center', Point, queue_size=10)
-        self.pub_radius = rospy.Publisher('radius', Int32, queue_size=10)
-        self.image_sub = rospy.Subscriber("/two_wheels_robot/camera1/image_raw",Image,self.camera_callback)
-        self.bridge_object = CvBridge() #Creates the bridge object between ROS and opencv images
+        rospy.on_shutdown(self.cleanup)
+
+        self.pub_center = rospy.Publisher("center", Point, queue_size=10)
+        self.pub_radius = rospy.Publisher("radius", Int32, queue_size=10)
+        self.image_sub = rospy.Subscriber(
+            "/two_wheels_robot/camera1/image_raw",
+            Image,
+            self.camera_callback,
+        )
+
+        self.bridge_object = CvBridge()
         self.center_ros = Point()
-        self.radius_ros=0
+        self.radius_ros = 0
         self.cnt_length = 0
+        self.frame = None
 
-        ap = argparse.ArgumentParser()
-        ap.add_argument("-v", "--video",
-            help="path to the (optional) video file")
-        ap.add_argument("-b", "--buffer", type=int, default=64,
-            help="max buffer size")
-        self.args = vars(ap.parse_args())
+        parser = argparse.ArgumentParser(
+            description="Track a colored object from a ROS image topic."
+        )
+        parser.add_argument(
+            "-b",
+            "--buffer",
+            type=int,
+            default=64,
+            help="max buffer size for the trail visualization",
+        )
+        self.args = vars(parser.parse_args(rospy.myargv()[1:]))
 
-
-        # define the lower and upper boundaries of the "green"
-        # ball in the HSV color space, then initialize the
-        # list of tracked points
-        # self.redLower = (5, 50, 0)
-        # self.redUpper = (15, 255, 255)
-        self.redLower = (0, 50, 0)
-        self.redUpper = (15, 255, 255)
+        self.red_lower = (0, 50, 0)
+        self.red_upper = (15, 255, 255)
         self.pts = deque(maxlen=self.args["buffer"])
 
-
-        #To adjust the execution rate of the while Loop
-        ros_rate = rospy.Rate(10) #10Hz
-        # keep looping
+        ros_rate = rospy.Rate(10)
+        rospy.loginfo("ball_tracker topic node initialized at 10 Hz")
         while not rospy.is_shutdown():
             if self.cnt_length == 0:
                 self.center_ros = Point()
@@ -58,82 +60,70 @@ class BallTracker():
             self.pub_radius.publish(self.radius_ros)
             ros_rate.sleep()
 
-        # close all windows
-        cv2.destroyAllWindows()
-
     def camera_callback(self, data):
-        print("callback")
         try:
-            # We select bgr8 because its the OpenCV encoding by default
-            self.frame = self.bridge_object.imgmsg_to_cv2(data, desired_encoding="bgr8")
-        except CvBridgeError as e:
-            print(e)
+            self.frame = self.bridge_object.imgmsg_to_cv2(
+                data,
+                desired_encoding="bgr8",
+            )
+        except CvBridgeError as error:
+            rospy.logerr(error)
+            return
 
-
-        # resize the frame, blur it, and convert it to the HSV
-        # color space
-        self.frame = imutils.resize(self.frame, width=600)
-        blurred = cv2.GaussianBlur(self.frame, (11, 11), 0)
+        frame = imutils.resize(self.frame, width=600)
+        blurred = cv2.GaussianBlur(frame, (11, 11), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-        # construct a mask for the color "red", then perform
-        # a series of dilations and erosions to remove any small
-        # blobs left in the mask
-        mask = cv2.inRange(hsv, self.redLower, self.redUpper)
+        mask = cv2.inRange(hsv, self.red_lower, self.red_upper)
         mask = cv2.erode(mask, None, iterations=2)
         mask = cv2.dilate(mask, None, iterations=2)
 
-        # find contours in the mask and initialize the current
-        # (x, y) center of the ball
-        cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE)
+        cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cnts = imutils.grab_contours(cnts)
         center = None
 
-        # only proceed if at least one contour was found
         self.cnt_length = len(cnts)
         if self.cnt_length > 0:
-            # find the largest contour in the mask, then use
-            # it to compute the minimum enclosing circle and
-            # centroid
             c = max(cnts, key=cv2.contourArea)
             ((x, y), radius) = cv2.minEnclosingCircle(c)
-            M = cv2.moments(c)
-            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+            moments = cv2.moments(c)
 
-            # only proceed if the radius meets a minimum size
-            if radius > 10:
-                # draw the circle and centroid on the frame,
-                # then update the list of tracked points
-                self.center_ros.x=float(x)
-                self.center_ros.y=float(y)
-                self.center_ros.z=0 #As it is an image z is not used.
-                self.radius_ros=int(radius)
+            if moments["m00"] != 0:
+                center = (
+                    int(moments["m10"] / moments["m00"]),
+                    int(moments["m01"] / moments["m00"]),
+                )
+            else:
+                self.cnt_length = 0
 
-                cv2.circle(self.frame, (int(x), int(y)), int(radius),
-                    (0, 255, 255), 2)
-                cv2.circle(self.frame, center, 5, (0, 0, 255), -1)
+            if radius > 10 and center is not None:
+                self.center_ros.x = float(x)
+                self.center_ros.y = float(y)
+                self.center_ros.z = 0.0
+                self.radius_ros = int(radius)
 
-        # update the points queue
+                cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 255), 2)
+                cv2.circle(frame, center, 5, (0, 0, 255), -1)
+
         self.pts.appendleft(center)
 
-        # loop over the set of tracked points
-        for i in range(1, len(self.pts)):
-            # if either of the tracked points are None, ignore
-            # them
-            if self.pts[i - 1] is None or self.pts[i] is None:
+        for index in range(1, len(self.pts)):
+            if self.pts[index - 1] is None or self.pts[index] is None:
                 continue
 
-            # otherwise, compute the thickness of the line and
-            # draw the connecting lines
-            thickness = int(np.sqrt(self.args["buffer"] / float(i + 1)) * 2.5)
-            cv2.line(self.frame, self.pts[i - 1], self.pts[i], (0, 0, 255), thickness)
+            thickness = int(np.sqrt(self.args["buffer"] / float(index + 1)) * 2.5)
+            cv2.line(frame, self.pts[index - 1], self.pts[index], (0, 0, 255), thickness)
 
-        # show the frame to our screen
-        cv2.imshow("Frame", self.frame)
-        key = cv2.waitKey(1) & 0xFF
+        cv2.imshow("Frame", frame)
+        cv2.waitKey(1)
+
+    @staticmethod
+    def cleanup():
+        cv2.destroyAllWindows()
 
 
-if __name__ == '__main__':
-    try: BallTracker()
-    except rospy.ROSInterruptException: pass
+if __name__ == "__main__":
+    try:
+        BallTracker()
+    except rospy.ROSInterruptException:
+        pass
