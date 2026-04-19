@@ -4,8 +4,8 @@
 
 `robot_follower` is a ROS 1 `catkin` package built around small Python nodes for object following. The repository currently provides two independent control pipelines:
 
-- visual tracking from camera images
-- nearest-object following from LiDAR scans
+- Visual tracking from camera images
+- Nearest-object following from LiDAR scans
 
 ## Nodes
 

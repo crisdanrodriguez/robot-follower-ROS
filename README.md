@@ -1,8 +1,8 @@
 # Robot Follower ROS
 
-[![CI](https://img.shields.io/github/actions/workflow/status/crisdanrodriguez/robot_follower_ROS/ci.yml?branch=main&label=CI)](https://github.com/crisdanrodriguez/robot_follower_ROS/actions/workflows/ci.yml)
-[![ROS 1](https://img.shields.io/badge/ROS-1%20%7C%20Catkin-22314E?logo=ros&logoColor=white)](http://wiki.ros.org/catkin)
-[![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.x-0A66C2?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![ROS](https://img.shields.io/badge/ROS-1%20%7C%20Catkin-0A66C2?style=flat-square&logo=ros&logoColor=white)](http://wiki.ros.org/catkin)
+[![Tests](https://img.shields.io/github/actions/workflow/status/crisdanrodriguez/robot_follower_ROS/ci.yml?branch=main&style=flat-square&label=Tests&logo=githubactions&logoColor=white)](https://github.com/crisdanrodriguez/robot_follower_ROS/actions/workflows/ci.yml)
 
 ROS 1 package for object following with two control pipelines: vision-based tracking from camera images and LiDAR-based following from laser scans.
 
@@ -22,7 +22,7 @@ ROS 1 package for object following with two control pipelines: vision-based trac
 
 This repository contains a compact ROS 1 `catkin` package that publishes `cmd_vel` commands from either:
 
-- image-based ball detection and proportional visual servoing
+- Image-based ball detection and proportional visual servoing
 - LiDAR-based nearest-object following
 
 The package is organized around standalone Python nodes so it can be dropped into a ROS workspace without extra scaffolding.
@@ -91,7 +91,7 @@ Topic expectations in the current codebase:
 ## Project Structure
 
 ```text
-robot_follower_ROS/
+robot-follower-ROS/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
